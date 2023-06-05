@@ -13,3 +13,8 @@ test_that('get_missing_dates errors on non-date class', {
   d1 <- c(1:5, 10)
   expect_error(get_missing_dates(d1))
 })
+
+
+test_that('names2chr',{
+  expect_equal(names2chr(foo, bar, buzz), c("foo", "bar", "buzz"))
+})
