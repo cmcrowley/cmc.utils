@@ -10,6 +10,12 @@ get_missing_dates <- function(dates){
   return(seqd[!(seqd %in% dates)])
 }
 
+#' @description Found at: https://stackoverflow.com/questions/520810/does-r-have-quote-like-operators-like-perls-qw
+#' @export
+names2chr <- function(...){
+  sapply(match.call()[-1], deparse)
+}
+
 
 #' @name formula2terms
 #' @export
@@ -70,3 +76,80 @@ plot_var_imp_rf <- function(rf_list, top_n=NULL){
          title= "RF importances by tixel",
          subtitle="for top 10 mean importance across tixels")
 }
+
+
+#' @description A residual weighting that downweights by the magnitudes of the values.
+#' Good for when residual weights should roughly half in magnitude as order of magnitude in y increases by 1 (log10 scale)
+#' For example, a residual of 3 is weighted higher for 4-1 than it does for 43-40. It also needs to be symmetric, that is,
+#' a residual of 4-1 should have the same magnitude as a residual of 1-4, which is why we weight by the mean of y and yhat (rather than by either one).
+
+wresid3 <- function(yhat, y){
+  r = y-yhat
+  mean_y_yhat <- sapply(1:length(yhat), function(i){mean(c(yhat[i], y[i])) })
+  r/(log10(mean(c(y, yhat)) + 1)) # The plus one makes it a pseudo 'base-1' logarithm.
+}
+
+
+wresid4 <- function(yhat, y, base){
+  r = y-yhat
+  # As the residual gets larger, the asymmetry will be larger.
+  r/(log(yhat+1, base=base)) # The plus one makes it a pseudo 'base-1' logarithm.
+}
+
+
+#' Difference as a fraction of expected
+#' @export
+mpe <- function(yhat, y){
+  yhat1 <- yhat+1
+  (y-yhat)/(yhat1)
+}
+
+
+#' @export
+mpe_inverse <- function(mpe, yhat){
+  mpe*(yhat+1) + yhat
+}
+
+# Scale so that percent errors are weighted higher for larger numbers
+#' @export
+mpe_logscaled <- function(yhat, y){
+  yhat1 <- yhat+1
+  log(yhat1)*(y-yhat)/(yhat1)
+}
+
+#' @export
+logratio <- function(yhat, y){
+  log((y+1)/(yhat+1))
+}
+
+#' @export
+logratio_inverse <- function(logratio, yhat){
+  exp(logratio)*(yhat+1)-1
+}
+
+
+
+# x <- sort(round(runif(50, 1, 100)))
+# y <- x*log(x)
+# y <- log(x)/x
+# plot(x, y)
+# abline(a=0, b=1)
+#
+# y <- sort(round(runif(50, 1, 100)))
+# r <- c(0, 1, 10, 20, 50, -50, -20, -10, -1)
+# df <- expand.grid(list(y, r)); names(df) <- c('y', 'r')
+# df$yhat <- df$y - df$r
+# df <- df %>% filter(yhat >= 0)
+#
+# df <- df[, c(1, 3, 2)]
+# df$rfrac <- mpe(df$yhat, df$y)
+# df$logrfrac <- mpe_logscaled(df$yhat, df$y)
+# df$logratio <- log(df$y/df$yhat)
+# View(df)
+#
+# df %>%
+#   mutate(resid=r) %>%
+#   tidyr::pivot_longer(cols=c('rfrac', 'logrfrac', 'logratio'), names_to='error_metric', values_to = 'error_value') %>%
+#   ggplot(aes(x=yhat, y=error_value)) +
+#   geom_point(aes(color=error_metric)) +
+#   facet_wrap(~r, scales='free')
