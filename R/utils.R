@@ -5,7 +5,7 @@ get_missing_dates <- function(dates){
   #TODO test
   #TODO handle NAs in date vector
   #TODO handle when `dates` is not class Date
-  stopifnot(is.Date(dates))
+  stopifnot(class(dates) == 'Date')
   seqd <- seq.Date(from=min(dates), to=max(dates), by=1)
   return(seqd[!(seqd %in% dates)])
 }
@@ -41,9 +41,9 @@ get_var_imp_rf <- function(rf){
 #' @name plot_var_imp_rf
 #' @description Produce a ggplot of variable importances. If length(`rf_list`) > 1, will produce a multi-faceted plot with a panel for each `rf`
 #' @param rf_list list of `ranger` model objects
-#' @param top_n (int) subset of variables for which to plot importances
+#' @param n_top (int) subset of variables for which to plot importances
 #' @export
-plot_var_imp_rf <- function(rf_list, top_n=NULL){
+plot_var_imp_rf <- function(rf_list, n_top=NULL){
   # do.call(rbind, lapply(rf_list, function(rf){}))
   stopifnot(is.list(rf_list))
 
@@ -53,7 +53,10 @@ plot_var_imp_rf <- function(rf_list, top_n=NULL){
     return(df)
   }))
 
-  df_all$rf_name <- factor(df_all$rf_name, levels=names(rf_list), ordered=TRUE)
+  if(!all(is.null(df_all$rf_name))){
+    df_all$rf_name <- factor(df_all$rf_name, levels=names(rf_list), ordered=TRUE)
+  }
+
 
   # Compute the mean importance across all rfs to determine facet ordering
   df_all <- df_all %>%
@@ -63,8 +66,11 @@ plot_var_imp_rf <- function(rf_list, top_n=NULL){
     dplyr::mutate(var_name=factor(var_name, levels=unique(var_name[order(mean_imp)])))
 
   # Narrow down to top_n
+  if(is.null(n_top)){
+    n_top <- length(unique(df_all$var_name))
+  }
   vars_include <- df_all %>% dplyr::arrange(desc(mean_imp)) %>% dplyr::distinct(var_name) %>% dplyr::pull(var_name)
-  vars_include <- vars_include[1:top_n] %>% droplevels()
+  vars_include <- vars_include[1:n_top] %>% droplevels()
   df_sub <- df_all %>% dplyr::filter(var_name %in% vars_include) %>% droplevels()
 
   p <- ggplot2::ggplot(df_sub, ggplot2::aes(x=round(importance_value), y=var_name)) +
@@ -75,6 +81,8 @@ plot_var_imp_rf <- function(rf_list, top_n=NULL){
          x='Importance Value',
          title= "RF importances by tixel",
          subtitle="for top 10 mean importance across tixels")
+
+  return(p)
 }
 
 
@@ -153,3 +161,77 @@ logratio_inverse <- function(logratio, yhat){
 #   ggplot(aes(x=yhat, y=error_value)) +
 #   geom_point(aes(color=error_metric)) +
 #   facet_wrap(~r, scales='free')
+
+#' @export
+ggtheme <- function(p, scale_x_date=TRUE, text_multiplier = 1){
+  # title_text_col <- "#222222"
+  text_col <- text_color()
+  if(scale_x_date){
+    p <- p + ggplot2::scale_x_date(date_breaks='1 year',
+                                   date_labels="'%y")
+  }
+  p + ggplot2::theme(axis.title=ggplot2::element_text(size=14*text_multiplier,
+                                                      color=text_col,
+                                                      family="Helvetica"#,
+                                                      #face='bold'
+  ),
+  axis.text.y=ggplot2::element_text(size=13*text_multiplier,
+                                    color=text_col,
+                                    family="Helvetica"),
+  axis.text.x=ggplot2::element_text(size=9*text_multiplier,
+                                    color=text_col,
+                                    family="Helvetica"),
+  plot.title=ggplot2::element_text(family="Helvetica",
+                                   face="bold",
+                                   color=text_col,
+                                   size=20*text_multiplier,
+                                   hjust=0),
+  plot.subtitle=ggplot2::element_text(family="Helvetica",
+                                      color=text_col,
+                                      hjust=0,
+                                      size=15*text_multiplier,
+                                      margin=ggplot2::margin(t=4, b=7)),
+  strip.text.x = ggplot2::element_text(size=13.5*text_multiplier, hjust=0,
+                                       color=text_col,
+                                       family="Helvetica"),
+  strip.background = ggplot2::element_rect(fill=NA,#'grey95',
+                                           color=NA),
+  panel.background = ggplot2::element_rect(fill='white', color=NA),
+  panel.border = ggplot2::element_rect(fill=NA, color='#545454'),
+  panel.grid=ggplot2::element_line(color='grey92'),
+  legend.key = ggplot2::element_rect(fill='white', color=NA),
+  legend.text=ggplot2::element_text(color=text_col,
+                                    size=13*text_multiplier),
+  legend.title=ggplot2::element_text(color=text_col,
+                                     size=14*text_multiplier),
+  complete=TRUE)
+}
+
+#' @export
+text_color <- function(){
+  '#434545'
+}
+
+#' Get a data frame from a .db file
+#
+#' @param dir_db path to .db file
+#'
+#' @return data frame or list of data.frames
+#' @export
+read_db_table <- function(path_db){
+  con <- DBI::dbConnect(RSQLite::SQLite(), path_db)
+  tables <- DBI::dbListTables(con)
+  if(length(tables)==1){
+    dat <- DBI::dbReadTable(con, tables)
+  } else{
+    stop("Write me to read more than one table!")
+  }
+  DBI::dbDisconnect(con)
+  return(dat)
+}
+
+
+#' @export
+get_date_from_doy <- function(year, doy){
+  as.Date(doy -1, origin=sprintf('%d-01-01', year))
+}
