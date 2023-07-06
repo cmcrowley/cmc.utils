@@ -18,9 +18,22 @@ names2chr <- function(...){
 
 
 #' @name formula2terms
+#' @param formula `formula` or `character`
 #' @export
 formula2terms <- function(formula){
-  return(rownames(attr(terms.formula(formula), "factors")))
+  return(rownames(attr(terms.formula(as.formula(formula)), "factors")))
+}
+
+#' Get the number of out-of-bag trees for each data point
+#' @param rf ranger random forest object (with inbag.counts)
+#'
+#' @export
+get_ntrees_oob <- function(rf){
+  # nobs x ntrees matrix
+  inbag_mat <- do.call(cbind, rf$inbag.counts)
+  # vector of size nobs. for each obs, the number of trees for which that obs was out-of-bag
+  # in other words, the number of trees that contribute to its prediction value
+  rowSums(inbag_mat == 0)
 }
 
 
