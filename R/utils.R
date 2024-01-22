@@ -1,3 +1,37 @@
+#' For each value in one data set, compute its rarity in another
+#' @param x data.frame of interest
+#' @param dist data.frame from which to compute frequencies
+data_ecdf <- function(x, dist){
+    # For character or factor variables, compute the proportion in `dist` that match
+    # For numeric variables, compute the percentile (ecdf)
+
+   # First make sure all the types match
+   # pass
+  chr_ecdf_col <- function(xi, col){
+    stopifnot(length(xi)==1)
+    stopifnot(class(xi)==class(col))
+
+    t <- table(col)
+    v <- as.numeric(t)
+    v <- v/(length(v))
+
+    return(v[match(xi, names(t))])
+  }
+  # Then do the character variables
+  names_chrs <- names(which(sapply(dist, function(col){
+    class(col) %in% c('character', 'factor', 'logical')
+  }) ))
+
+  # then do the numeric variables
+  names_num <-  names(which(sapply(dist, function(col){
+    class(col) %in% c('numeric', 'integer')
+  }) ))
+
+  if(length(names_chrs) > 0){
+
+  }
+}
+
 #' Convert data frame to sf object with ESPG 4326 SRD
 #' @export
 dat2sf <- function(dat, coord_cols=c('longitude', 'latitude')){
