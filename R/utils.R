@@ -1,3 +1,11 @@
+#' @export
+r_squared <- function(observed, predicted){
+  ssr <- sum( (observed - predicted)^2, na.rm=TRUE )
+  sst <- sum( (observed - mean(observed))^2, na.rm=TRUE )
+  1 - (ssr/sst)
+}
+
+
 #' For each value in one data set, compute its rarity in another
 #' @param x data.frame of interest
 #' @param dist data.frame from which to compute frequencies
@@ -134,8 +142,10 @@ get_var_imp_rf <- function(rf){
 #' @description Produce a ggplot of variable importances. If length(`rf_list`) > 1, will produce a multi-faceted plot with a panel for each `rf`
 #' @param rf_list list of `ranger` model objects
 #' @param n_top (int) subset of variables for which to plot importances
+#' @param ... other arguments to pass to ggtheme()
 #' @export
-plot_var_imp_rf <- function(rf_list, n_top=NULL, facet_scales="fixed", names_function=NULL){
+plot_var_imp_rf <- function(rf_list, n_top=NULL, facet_scales="fixed",
+                            names_function=NULL, ...) {
   # do.call(rbind, lapply(rf_list, function(rf){}))
   stopifnot(is.list(rf_list))
 
@@ -155,35 +165,46 @@ plot_var_imp_rf <- function(rf_list, n_top=NULL, facet_scales="fixed", names_fun
   if(!is.null(names_function)){
     df_all$var_name <- names_function(df_all$var_name)
   }
-  # Compute the mean importance across all rfs to determine variable ordering
-  df_all <- df_all %>%
-    dplyr::group_by(var_name) %>%
-    dplyr::mutate(mean_imp = mean(importance_value, na.rm=TRUE)) %>%
-    dplyr::ungroup() %>%
-    dplyr::mutate(var_name=factor(var_name, levels=unique(var_name[order(mean_imp)])))
 
-  # Narrow down to top_n
-  if(is.null(n_top)){
-    n_top <- length(unique(df_all$var_name))
-  }
-  vars_include <- df_all %>% dplyr::arrange(desc(mean_imp)) %>% dplyr::distinct(var_name) %>% dplyr::pull(var_name)
-  vars_include <- vars_include[1:n_top] %>% droplevels()
-  df_sub <- df_all %>% dplyr::filter(var_name %in% vars_include) %>% droplevels()
+  ordering <- df_all %>%
+    group_by(rf_name) %>%
+    slice_max(order_by = importance_value, n=n_top) %>%
+    droplevels() %>%
+    do(data.frame(al=levels(reorder(interaction(.$rf_name, .$var_name, drop=TRUE),
+                                    .$importance_value)))) %>%
+    pull(al)
 
-  labels <- df_sub %>% distinct(rf_name, .keep_all=TRUE) %>% select(rf_name, r2_oob)
-  max_imp <- max(df_sub$importance_value)
-  p <- ggplot2::ggplot() +
-    ggplot2::geom_dotplot(data=df_sub, binaxis = "y",
-                          ggplot2::aes(x=round(importance_value), y=var_name,
-                                       fill=var_name, color=var_name)) +
-    ggplot2::geom_text(data=labels, ggplot2::aes(label=sprintf("R2=\n %s", as.character(r2_oob))),
-                       x=0.8*max_imp,
+  varname <- gsub("^.*\\.", "", ordering)
+
+  # R^2 labels and x coordinate of placement:
+  label_importance <- df_all %>%
+    group_by(rf_name) %>%
+    summarize(median_importance = median(importance_value))
+  r2_labels <- df_all %>%
+    distinct(rf_name, .keep_all=TRUE) %>%
+    select(rf_name, r2_oob) %>%
+    full_join(label_importance, by='rf_name')
+
+  p <- df_all %>%
+    mutate(var = factor(interaction(rf_name, var_name), levels=ordering)) %>%
+    # drops unused levels in a way that actually works here:
+    filter(!is.na(var)) %>%
+    ggplot(aes(x=round(importance_value), y = var)) +
+    facet_wrap(~rf_name, scales=facet_scales) +
+    geom_dotplot(binaxis = "y", aes(fill=var_name, color=var_name)) +
+    scale_y_discrete(breaks=ordering, labels = varname) +
+    ggplot2::geom_text(data=r2_labels,
+                       # TODO: this positioning doesn't work. Fix!
+                       ggplot2::aes(label=sprintf("R2=\n %s",
+                                                  as.character(r2_oob)),
+                                    x=median_importance),
+
                        y=3) +
-    ggplot2::facet_wrap(~rf_name, nrow=2, scales=facet_scales) +
     ggplot2::labs(y='Variable',
-         x='Importance Value')
+         x='Importance Value',
+         title = sprintf("Top %s variables by model", n_top))
 
-  return(ggtheme(p, scale_x_date=FALSE) + ggplot2::theme(legend.position='none')
+  return(ggtheme(p, scale_x_date=FALSE, ...) + ggplot2::theme(legend.position='none')
 )
 }
 
@@ -272,7 +293,7 @@ ggtheme <- function(p, scale_x_date=TRUE, text_multiplier = 1){
     p <- p + ggplot2::scale_x_date(date_breaks='1 year',
                                    date_labels="'%y")
   }
-  p + ggplot2::theme(axis.title=ggplot2::element_text(size=15*text_multiplier,
+  p <- p + ggplot2::theme(axis.title=ggplot2::element_text(size=15*text_multiplier,
                                                       color=text_col,
                                                       family="Helvetica"#,
                                                       #face='bold'
@@ -314,6 +335,8 @@ ggtheme <- function(p, scale_x_date=TRUE, text_multiplier = 1){
   legend.title=ggplot2::element_text(color=text_col,
                                      size=15*text_multiplier),
   complete=TRUE)
+
+  return(p)
 }
 
 #' @export
