@@ -1,3 +1,16 @@
+#' @name get_var_imp_rf
+#' @description Get variable importances from a `ranger` model object as a d
+#' @param rf `ranger` model object
+#' @value a data frame with names `var_name`, `importance_type`, and `importance_value`
+#' @export
+get_var_imp_rf <- function(rf){
+  imp_type <- rf$importance.mode
+  imp_v    <- rf$variable.importance
+  df       <- data.frame(var_name=names(imp_v), importance_value=as.numeric(imp_v), importance_type=imp_type)
+  return(df[order(df$importance_value, decreasing = TRUE),])
+}
+
+
 #' Get tree depth for each tree
 #' a vector of length num.trees that represents the number of nodes in the longest continuous branch, inclusive of the first and last
 #' #' @export
