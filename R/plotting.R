@@ -48,7 +48,7 @@ ggtheme <- function(p, scale_x_date=TRUE, text_multiplier = 1){
   legend.title=ggplot2::element_text(color=text_col,
                                      size=15*text_multiplier),
   complete=TRUE)
-  
+
   return(p)
 }
 
@@ -63,11 +63,11 @@ text_color <- function(){
 #' @param n_top (int) subset of variables for which to plot importances
 #' @param ... other arguments to pass to ggtheme()
 #' @export
-plot_var_imp_rf <- function(rf_list, n_top=NULL, facet_scales="fixed",
+plot_var_imp_rf <- function(rf_list, n_top=NULL, facet_scales="free",
                             names_function=NULL, ...) {
   # do.call(rbind, lapply(rf_list, function(rf){}))
   stopifnot(is.list(rf_list))
-  
+
   df_all <- do.call(rbind, lapply(seq_along(rf_list), function(i){
     df <- get_var_imp_rf(rf_list[[i]]) %>%
       slice_max(order_by = importance_value, n=n_top)
@@ -77,15 +77,15 @@ plot_var_imp_rf <- function(rf_list, n_top=NULL, facet_scales="fixed",
                         round(1-rf_list[[i]]$prediction.error, 3))
     return(df)
   }))
-  
+
   if(!all(is.null(df_all$rf_name))){
     df_all$rf_name <- factor(df_all$rf_name, levels=names(rf_list), ordered=TRUE)
   }
-  
+
   if(!is.null(names_function)){
     df_all$var_name <- names_function(df_all$var_name)
   }
-  
+
   ordering <- df_all %>%
     group_by(rf_name) %>%
     slice_max(order_by = importance_value, n=n_top) %>%
@@ -93,39 +93,39 @@ plot_var_imp_rf <- function(rf_list, n_top=NULL, facet_scales="fixed",
     do(data.frame(al=levels(reorder(interaction(.$rf_name, .$var_name, drop=TRUE),
                                     .$importance_value)))) %>%
     pull(al)
-  
+
   varname <- gsub("^.*\\.", "", ordering)
-  
+
   # R^2 labels and x coordinate of placement:
   label_importance <- df_all %>%
     group_by(rf_name) %>%
-    summarize(median_importance = median(importance_value))
+    summarize(x_placement = median(c(min(importance_value),
+                                     max(importance_value))))
+
   r2_labels <- df_all %>%
     distinct(rf_name, .keep_all=TRUE) %>%
     select(rf_name, r2_oob) %>%
     full_join(label_importance, by='rf_name')
-  
+
   p <- df_all %>%
     mutate(var = factor(interaction(rf_name, var_name), levels=ordering)) %>%
     # drops unused levels in a way that actually works here:
     filter(!is.na(var)) %>%
     ggplot(aes(x=round(importance_value), y = var)) +
-    facet_wrap(~rf_name, scales=facet_scales) +
     # geom_line(aes(color=var_name, group=var_name)) +
     geom_dotplot(binaxis = 'y',
                  aes(fill=var_name, color=var_name)) +
     scale_y_discrete(breaks=ordering, labels = varname) +
     ggplot2::geom_text(data=r2_labels,
-                       # TODO: this positioning doesn't work. Fix!
-                       ggplot2::aes(label=sprintf("R2=\n %s",
+                       ggplot2::aes(label=sprintf("R2 =\n %s",
                                                   as.character(r2_oob)),
-                                    x=median_importance),
-                       
+                                    x=x_placement),
                        y=3) +
+    facet_wrap(~rf_name, scales=facet_scales) +
     ggplot2::labs(y='Variable',
                   x='Importance Value',
                   title = sprintf("Top %s variables by model", n_top))
-  
+
   return(ggtheme(p, scale_x_date=FALSE, ...) +
            ggplot2::theme(legend.position='none') +
            ggplot2::theme(axis.text.y = element_text(hjust=1))
