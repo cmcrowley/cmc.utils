@@ -1,4 +1,5 @@
 #' @export
+#' # Note that this formulation is different from the square of the correlation coefficient
 r_squared <- function(observed, predicted){
   ssr <- sum( (observed - predicted)^2, na.rm=TRUE )
   sst <- sum( (observed - mean(observed))^2, na.rm=TRUE )
@@ -62,8 +63,8 @@ weighted_mean_se <- function(x, obs_ss, type='2', cap_ss_value=NULL){
   # obs_ss = observer sample size that went into that estimate
   # type 1 true weighted mean, where we calculate an effective sample size based on the weights
   # type 2 each point gets mostly the same weight, but the uncertainties on each are very different
-  
-  
+
+
   ####################
   # Create the weights
   ####################
@@ -84,7 +85,7 @@ weighted_mean_se <- function(x, obs_ss, type='2', cap_ss_value=NULL){
   # -- to deal with this, change sqrt(n) in the denominator to something smaller
   # then we should assume the variance decreases as the sqrt(n) increases
   w <- sqrt(obs_ss)
-  
+
   ################
   # Sample sizes
   ################
@@ -97,7 +98,7 @@ weighted_mean_se <- function(x, obs_ss, type='2', cap_ss_value=NULL){
     stop('Must specify type "1" or "2"')
   }
   correction = n / (n-1)
-  
+
   xbar <- stats::weighted.mean(x, w)
   variance_i <- correction*(sum( w*( (x-xbar)^2 ) / sum(w) ))
   variance_mean <- variance_i / n

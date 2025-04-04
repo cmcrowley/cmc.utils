@@ -1,3 +1,63 @@
+#' @export
+inverse_logit <- function(logit){
+  1 / (exp(-logit) + 1)
+}
+
+#' @export
+geometric_mean <- function(x){
+  n <- length(x)
+  prod(x)^(1/n)
+}
+
+#' @export
+round_to_nearest <- function(v, constant=NULL, logbase=NULL,
+                             ties='random') {
+  sapply(v, function(x) {
+    # TODO handle ties in a principled way (disabled for now)
+    stopifnot(ties %in% c('floor', 'ceiling', 'random'))
+    if(is.null(constant) == is.null(logbase)) {
+      stop("Must specify either `constant` or `base`, but not both")
+    }
+
+    if(!is.null(logbase)) {
+      if(x == 0){
+        return(0)
+      }
+      # Cant have negative numbers for a log-based thing
+      # Could see argument for returning 0 instead
+      if(x == -1){
+        # treat this like you treat a value of 1
+        x <- 1
+      }
+      if (x < -1){
+        return(NA)
+      }
+      # Determine constant
+      # down <- logbase^floor(log(x, base=logbase))
+      # up <- logbase^ceiling(log(x, base=logbase))
+      constant <- logbase^round(log(x, base=logbase))
+    }
+
+    # if(x %% constant == 0.5(constant) & ties != 'floor') {
+    #   up <- ceiling(x/constant)*constant
+    #   if(ties == 'ceiling'){
+    #     return(up)
+    #   } else{
+    #     # If x is halfway between two values & ties are random,
+    #     # there should be an equal chance of rounding up or rounding down:
+    #     down <- floor(x/constant)*constant
+    #     warning(sprintf("x= %s falls exactly between two eligible values. Picking randomly between %s and %s", x, down, up))
+    #     return(sample(c(down, up), size=1))
+    #   }
+    #
+    # } else{
+    #   # This equates to "floor" option:
+    round(x/constant)*constant
+    # }
+  })
+
+}
+
 #' @description Found at: https://stackoverflow.com/questions/520810/does-r-have-quote-like-operators-like-perls-qw
 #' @export
 names2chr <- function(...){

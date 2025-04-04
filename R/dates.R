@@ -34,3 +34,14 @@ date_ecdf <- function(dates){
 doy2date <- function(year, doy){
   as.Date(doy -1, origin=sprintf('%d-01-01', year))
 }
+
+#' @export
+cycle_date <- function(d){
+  sapply(d, function(d){
+    if(d > 366){
+      return(d-366)
+    } else{
+      return(d)
+    }
+  })
+}
