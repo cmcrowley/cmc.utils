@@ -303,10 +303,10 @@ ebirdst_varnames <- function(vars){
     'cds_sf', 'snow water equivalent',
     'cds_rf', 'rainfall',
     'cds_tp', 'total precipitation',
-    'bathymetry_elevation_median', 'Elevation summarized from 15-arcsecond grid (median)',
-    'bathymetry_elevation_sd', 'Elevation summarized from 15-arcsecond grid (standard deviation)',
-    'bathymetry_slope_median', 'Topographic slope summarized from 15-arcsecond grid (median)',
-    'bathymetry_slope_sd', 'Topographic slope summarized from 15-arcsecond grid (standard deviation)'
+    'bathymetry_elevation_median', 'Elevation summarized from 250m-resolution grid (median)',
+    'bathymetry_elevation_sd', 'Elevation summarized from 250m-resolution grid (standard deviation)',
+    'bathymetry_slope_median', 'Topographic slope summarized from 250m-resolution grid (median)',
+    'bathymetry_slope_sd', 'Topographic slope summarized from 250m-resolution grid (standard deviation)'
   )
   if(any(vars %in% dat$var)){
     sapply(vars, function(var){
