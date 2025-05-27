@@ -1,3 +1,78 @@
+#' @name calculate_pd
+#' Calculate partial dependencies
+#' (based on function with same name in ebirdstwf, but doesn't require ebirdst
+#' fit_predict output)
+#' @export
+calculate_pd <- function(predictor, model, data, x_res, n,
+                         summary_fn = mean,
+                         quantile_grid = FALSE,
+                         x_range = c(-Inf, Inf),
+                         trim_right = FALSE){
+  # values of focal predictor
+  v <- data[[predictor]]
+  v <- v[v >= x_range[1] & v <= x_range[2]]
+  if (trim_right && !(predictor == "solar_noon_diff")) {
+    # only use values below 95% quantile of non-zero values
+    v_nozero <- v[v > 0]
+    if (length(v_nozero) >= 30) {
+      v <- v[v <= stats::quantile(v_nozero, probs = 0.95, na.rm = TRUE)]
+    } else {
+      # if there are < 30 non-zero values, don't produce a pd
+      return(NULL)
+    }
+  }
+  if (quantile_grid) {
+    # define quantile prediction grid
+    x_grid <- stats::quantile(v,
+                              probs = seq(from = 0, to = 1, length = x_res),
+                              na.rm = TRUE)
+  } else {
+    # define evenly spaced prediction grid
+    rng <- range(v, na.rm = TRUE)
+    x_grid <- seq(rng[1], rng[2], length.out = x_res)
+  }
+  # remove duplicates
+  dupes <- duplicated(signif(x_grid, 8))
+  x_grid <- x_grid[!dupes]
+  x_grid <- unname(unique(x_grid))
+
+  # if x-grid only has a single unique value, don't produce a pd
+  if (length(x_grid) == 1) {
+    return(NULL)
+  }
+
+  grid <- data.frame(predictor = predictor, x = x_grid)
+  names(grid) <- c("predictor", predictor)
+  # subsample training data
+  n <- min(n, nrow(data))
+  s <- sample(seq_len(nrow(data)), size = n, replace = FALSE)
+  data <- data[s, ]
+  # drop focal predictor from data
+  data <- data[names(data) != predictor]
+  grid <- merge(grid, data, all = TRUE)
+
+  # summarize
+  pd <- grid[, c("predictor", predictor)]
+  names(pd) <- c("predictor", "x")
+  # predict
+  # TODO: calling .$predictions might be specific to ranger.
+  # Maybe use the broom package to access model predictions?
+  pd$response <- stats::predict(model, grid)$predictions
+  pd <- dplyr::group_by(pd, .data$predictor, .data$x) %>%
+    dplyr::summarize(summarized_response = summary_fn(.data$response))
+
+  # pd_mean <- dplyr::group_by(pd, .data$predictor, .data$x) %>%
+  #   dplyr::summarize(mean_response = mean(.data$response))
+  # pd_median <- dplyr::group_by(pd, .data$predictor, .data$x) %>%
+  #   dplyr::summarize(median_response = median(.data$response))
+  # pd <- full_join(pd_mean, pd_median)
+  # assign weights based on number of checklists within each interval
+  pd <- dplyr::arrange(pd, .data$x)
+  v_binned <- cut(v, breaks = pd$x, include.lowest = TRUE, right = FALSE)
+  pd$n <- c(as.integer(table(v_binned)), NA_integer_)
+  return(pd)
+}
+
 #' @name get_var_imp_rf
 #' @description Get variable importances from a `ranger` model object as a d
 #' @param rf `ranger` model object
