@@ -1,7 +1,7 @@
 #' @name get_var_imp_rf
 #' @description Get variable importances from a `ranger` model object as a d
 #' @param rf `ranger` model object
-#' @value a data frame with names `var_name`, `importance_type`, and `importance_value`
+#' @return  a data frame with names `var_name`, `importance_type`, and `importance_value`
 #' @export
 get_var_imp_rf <- function(rf){
   imp_type <- rf$importance.mode

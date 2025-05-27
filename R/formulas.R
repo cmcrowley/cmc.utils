@@ -25,8 +25,8 @@ formula2terms <- function(formula){
 
 #' Remove terms from list that are constant in the data
 #' @name pare_formula
-#' @dat data frame to be modeled
-#' @predictors character vector of predictor names
+#' @param dat data frame to be modeled
+#' @param predictors character vector of predictor names
 #' @export
 pare_formula <- function(dat, predictors){
   get_constants <- function(dat){

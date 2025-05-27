@@ -1,3 +1,15 @@
+#' get_constant_vars
+#' Return variable names of columns that are constant across `dat`
+#' @export
+get_constant_vars <- function(dat){
+  is_constant <- sapply(names(dat),
+         function(varx){
+           constant <- length(unique(dat[[varx]])) == 1
+           }
+         )
+  return(names(is_constant[which(is_constant)]))
+}
+
 #' @export
 inverse_logit <- function(logit){
   1 / (exp(-logit) + 1)

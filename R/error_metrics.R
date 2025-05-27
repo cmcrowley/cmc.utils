@@ -1,6 +1,7 @@
 #' @export
-#' # Note that this formulation is different from the square of the correlation coefficient
 r_squared <- function(observed, predicted){
+# Note that this formulation is different from the square of the correlation coefficient
+
   ssr <- sum( (observed - predicted)^2, na.rm=TRUE )
   sst <- sum( (observed - mean(observed))^2, na.rm=TRUE )
   1 - (ssr/sst)
