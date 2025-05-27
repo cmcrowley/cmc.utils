@@ -4,7 +4,6 @@
 #' fit_predict output)
 #' @export
 calculate_pd <- function(predictor, model, data, x_res, n,
-                         summary_fn = mean,
                          quantile_grid = FALSE,
                          x_range = c(-Inf, Inf),
                          trim_right = FALSE){
@@ -53,24 +52,27 @@ calculate_pd <- function(predictor, model, data, x_res, n,
 
   # summarize
   pd <- grid[, c("predictor", predictor)]
-  names(pd) <- c("predictor", "x")
+  names(pd) <- c("predictor", "value")
   # predict
   # TODO: calling .$predictions might be specific to ranger.
   # Maybe use the broom package to access model predictions?
   pd$response <- stats::predict(model, grid)$predictions
-  pd <- dplyr::group_by(pd, .data$predictor, .data$x) %>%
-    dplyr::summarize(summarized_response = summary_fn(.data$response))
+  probs <- seq(0.05, 0.95, by = 0.05)
 
-  # pd_mean <- dplyr::group_by(pd, .data$predictor, .data$x) %>%
-  #   dplyr::summarize(mean_response = mean(.data$response))
-  # pd_median <- dplyr::group_by(pd, .data$predictor, .data$x) %>%
-  #   dplyr::summarize(median_response = median(.data$response))
-  # pd <- full_join(pd_mean, pd_median)
+  pds <- dplyr::group_by(pd, .data$predictor, .data$value) %>%
+    dplyr::reframe(prob = seq(0.05, 0.95, by = 0.05),
+                   quantile = quantile(.data$response, prob),
+                   response_mean = mean(.data$response),
+                   response_median = median(.data$response)) %>%
+    tidyr::pivot_wider(names_from = prob,
+                       names_prefix = "q_",
+                       values_from = quantile)
+
   # assign weights based on number of checklists within each interval
-  pd <- dplyr::arrange(pd, .data$x)
-  v_binned <- cut(v, breaks = pd$x, include.lowest = TRUE, right = FALSE)
-  pd$n <- c(as.integer(table(v_binned)), NA_integer_)
-  return(pd)
+  pds <- dplyr::arrange(pd, .data$value)
+  v_binned <- cut(v, breaks = pds$value, include.lowest = TRUE, right = FALSE)
+  pds$n <- c(as.integer(table(v_binned)), NA_integer_)
+  return(pds)
 }
 
 #' @name get_var_imp_rf

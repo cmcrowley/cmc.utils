@@ -1,3 +1,31 @@
+#' plot_pd
+#' @param pd data frame with columns "predictor", "x", "summarized_response", "q25_response"
+#' Returns a partial dependence plot given output from `calculate_pd()`
+#' @export
+plot_pd <- function(pd, include_iqr = TRUE){
+  pd_quant <- pd %>%
+    dplyr::select(predictor, value, contains("q_")) %>%
+    tidyr::pivot_longer(cols = -c('predictor', 'value'),
+                        names_to = "prob",
+                        values_to = "quantile",
+                        names_prefix = "q_")
+  p <- ggplot(pd) +
+    aes(x = value, y = response_mean) +
+    geom_point() +
+    geom_line() +
+    geom_line(aes(y = q_0.05),
+              linetype = "dashed") +
+    geom_line(aes(y = q_0.25)) +
+    geom_line(aes(y = q_0.75)) +
+    geom_line(aes(y = q_0.95),
+              linetype = "dashed")
+    scale_color_viridis_c() +
+    facet_wrap(~ predictor, ncol = 1, scales = "free") +
+    theme(legend.position = "bottom",
+          legend.key.width = unit(0.2, "npc"))
+return(p)
+}
+
 #' @export
 ggtheme <- function(p, scale_x_date=TRUE, text_multiplier = 1){
   # title_text_col <- "#222222"
