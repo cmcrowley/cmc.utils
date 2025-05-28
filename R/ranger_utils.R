@@ -9,7 +9,10 @@ calculate_pd <- function(predictor, model, data, x_res, n,
                          trim_right = FALSE){
   # values of focal predictor
   v <- data[[predictor]]
-  v <- v[v >= x_range[1] & v <= x_range[2]]
+
+  keeps <- v >= x_range[1] & v <= x_range[2]
+  v <- v[keeps]
+
   if (trim_right && !(predictor == "solar_noon_diff")) {
     # only use values below 95% quantile of non-zero values
     v_nozero <- v[v > 0]
@@ -48,6 +51,13 @@ calculate_pd <- function(predictor, model, data, x_res, n,
   data <- data[s, ]
   # drop focal predictor from data
   data <- data[names(data) != predictor]
+
+  # Handle derived variables:
+  if(predictor == "solar_noon_diff"){
+    # recalculate abs_solar_noon_diff
+    data$abs_solar_noon_diff <- NULL
+    grid$abs_solar_noon_diff <- abs(grid$solar_noon_diff)
+  }
   grid <- merge(grid, data, all = TRUE)
 
   # summarize
@@ -69,7 +79,8 @@ calculate_pd <- function(predictor, model, data, x_res, n,
                        values_from = quantile)
 
   # assign weights based on number of checklists within each interval
-  pds <- dplyr::arrange(pd, .data$value)
+  pds <- dplyr::arrange(pds, .data$value)
+
   v_binned <- cut(v, breaks = pds$value, include.lowest = TRUE, right = FALSE)
   pds$n <- c(as.integer(table(v_binned)), NA_integer_)
   return(pds)
