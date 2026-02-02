@@ -1,16 +1,44 @@
+#' Get family and order of birds using the Open Tree of Life
+#' (assumed to be installed and data downloaded to local disk)
+#' @export
+get_taxa <- function(sp_codes){
+  df <- data.frame(SPECIES_CODE = sp_codes)
+  tx <- clootl::taxonomyGet(2025) %>% select(SPECIES_CODE, FAMILY, ORDER)
+  df <- df %>% left_join(tx)
+}
+
+#' @export
+stixelid_2_season <- function(stixel_ids){
+  sapply(stixel_ids, function(stxid){
+    sprintf("day_%s",
+            paste(sprintf("%03d",as.integer(strsplit(stxid, "-")[[1]][2:3])), collapse="-"))
+  }, USE.NAMES = FALSE)
+}
+
+#' @export
+species_prevalence <- function(dat, spp_names){
+  spp_dat <- dat %>%
+    dplyr::select(all_of(spp_names))
+  spp_dat[spp_dat != 0] <- 1
+  colMeans(spp_dat) %>%
+    sort(decreasing = TRUE)
+}
+
 #' @export
 get_species <- function(x){
-  stopifnot(is.character(x))
-  r <- ebirdst::ebirdst_runs
-  x <- tolower(trimws(x))
-  code <- match(x, tolower(r$species_code))
-  sci <- match(x, tolower(r$scientific_name))
-  com <- match(x, tolower(r$common_name))
-  if(is.na(code)){
-    return(r$species_code[dplyr::coalesce(code, sci, com)]  )
-  } else{
-    return(r$common_name[dplyr::coalesce(code, sci, com)])
-  }
+  sapply(x, function(x){
+    if(!is.character(x)){return(NA)}
+    r <- ebirdst::ebirdst_runs
+    x <- tolower(trimws(x))
+    code <- match(x, tolower(r$species_code))
+    sci <- match(x, tolower(r$scientific_name))
+    com <- match(x, tolower(r$common_name))
+    if(is.na(code)){
+      return(r$species_code[dplyr::coalesce(code, sci, com)]  )
+    } else{
+      return(r$common_name[dplyr::coalesce(code, sci, com)])
+    }
+  })
 }
 
 create_basemap <- function(basemap, bbox = NULL, zeros = NULL) {
@@ -94,10 +122,10 @@ union_stixel_params <- function(dir_interactive_stx, stxl_ids=NULL, param_name){
     interactive_stixel_files <- files_available
   }
 
-  if(param_name == "srd"){
+  if(grepl("srd", param_name)){
     return(do.call(dplyr::bind_rows, lapply(interactive_stixel_files, function(interactive_stixel){
       message("Reading: ", basename(interactive_stixel), " for stixel params")
-      return(readRDS(interactive_stixel)$srd)
+      return(readRDS(interactive_stixel)[[param_name]])
     })))
   }
   unique(unlist(lapply(interactive_stixel_files, function(interactive_stixel){
@@ -303,10 +331,10 @@ ebirdst_varnames <- function(vars){
     'cds_sf', 'snow water equivalent',
     'cds_rf', 'rainfall',
     'cds_tp', 'total precipitation',
-    'bathymetry_elevation_median', 'Elevation summarized from 250m-resolution grid (median)',
-    'bathymetry_elevation_sd', 'Elevation summarized from 250m-resolution grid (standard deviation)',
-    'bathymetry_slope_median', 'Topographic slope summarized from 250m-resolution grid (median)',
-    'bathymetry_slope_sd', 'Topographic slope summarized from 250m-resolution grid (standard deviation)'
+    'bathymetry_elevation_median', 'elevation',#Elevation summarized from 250m-resolution grid (median)',
+    'bathymetry_elevation_sd', 'elevation_sd',#Elevation summarized from 250m-resolution grid (standard deviation)',
+    'bathymetry_slope_median', 'slope',#Topographic slope summarized from 250m-resolution grid (median)',
+    'bathymetry_slope_sd', 'slope_sd'#Topographic slope summarized from 250m-resolution grid (standard deviation)'
   )
   if(any(vars %in% dat$var)){
     sapply(vars, function(var){
@@ -329,12 +357,167 @@ ebirdst_varnames <- function(vars){
 
 }
 
+#' @param fit_predict output from `ebirdstwf::fit_model_stixel`
+#' @param sp species code (maybe not necessary?)
+#' @param erd2srd data frame that associates checklist_ids with srd_ids
+#' @param srd_day which srd day do we want to predict to?
+#' @param cci_count_varname one of `c_cci0`, `cci_occ_stx`, `prop_obs_gte0.50`, `mean_z_ppoisrrf`, or `none`
+srd_pred_countcci <- function(fit_predict,
+                              sp,
+                              erd2srd,
+                              srd_day,
+                              dir_srd_weekly = "~/data/erd_2023/srd_3km_week.parquet",
+                              path_srd_year = "~/data/erd_2023/srd_3km_year.parquet",
+                              cci_count_varname){
+  stopifnot(dir.exists(dir_srd_weekly))
+  stopifnot(file.exists(path_srd_year))
+  if(!( !(cci_count_varname %in% c("none")) ==
+        (cci_count_varname %in% fit_predict$model$model_count$forest$independent.variable.names)
+  )){
+    browser()
+  }
 
+  m <- fit_predict
+  sx <- unique(m$model_summary$stixel_id)
+  # Check if srd preds exist already:
+  f1 <- file.path('~/Documents/cci/cci_count/srd_preds',
+                  sprintf('%s_srd%s_%s_opt%s_%s.rds',
+                          sp,
+                          srd_day,
+                          stringr::str_replace_all(cci_count_varname, "_", ""),
+                          "TRUE",
+                          sx))
+  f2 <- file.path('~/Documents/cci/cci_count/srd_preds',
+                  sprintf('%s_srd%s_%s_opt%s_%s.rds',
+                          sp,
+                          srd_day,
+                          stringr::str_replace_all(cci_count_varname, "_", ""),
+                          "FALSE",
+                          sx))
+  if( (file.exists(f1) & file.exists(f2)) | (cci_count_varname == "none" & file.exists(f2)) ){
+    message("SRD file exists. Exiting now.")
+    return()
+  }
+
+  # Generate params:
+  param_objects <- c("PREDICTOR_LIST", "HABITAT_COVARS", "OBS_COVARS", "WEATHER_COVARS",
+                     "weekly_srd", "srd")
+  params <- lapply(param_objects, function(pname){
+    union_stixel_params(dir_interactive_stx = '~/data/erd_2023/results/interactive',
+                        stxl_ids = sx,
+                        pname)
+  })
+  names(params) <- param_objects
+
+  # Setup for cci count values to predict to:
+  cci_count_values <- list(cci_count_00 = list(default_val = 1.85,
+                                               valid_range = c(0,2)),
+                           # occurrence CCI:
+                           cci_count_06 = list(default_val = 1.85,
+                                               valid_range = c(0, 2)),
+                           cci_count_04 = list(default_val = 1,
+                                               valid_range = c(0, 2)),
+                           cci_count_01 = list(default_val = 0.5,
+                                               valid_range = c(0.5, 1)),
+                           # prop_obs_gte0.50 = list(default_val = 0.5,
+                           #                         valid_range = c(0, 1)),
+                           # prop_obs_gte0.75 = list(default_val = 0.25,
+                           #                         valid_range = c(0, 1)),
+                           # mean_z_ppoisrrf = list(default_val = 0.25,
+                           #                        valid_range = c(-2, 2)),
+                           none = list(default_val = NA,
+                                       valid_range = NA)
+  )
+
+  # Get SRD info and SRD data:
+  # m$model$sampled <- erd2srd %>%
+  #   mutate(checklist_id = as.character(checklist_id)) %>%
+  #   inner_join(m$model$sampled)
+
+  stopifnot(nrow(m$model$sampled) > 0)
+
+  # rm(erd2srd); gc()
+
+  # sp_params <- readRDS(sp_params_file)
+  stixel_depth <-  (366 / 13) #if (params$IS_RESIDENT) 366 else (366 / 13)
+  stixel_params <- ebirdstwf::parse_stixel_id(sx, stixel_depth = stixel_depth)
+  # srd_days <- subset_days(m$model$sampled$closest_srd_day %>% unique(),
+  #                         stixel_params$start_day, stixel_params$end_day)
+  # stopifnot(srd_day %in% srd_days)
+
+  ### SRD PREDS
+
+  message("Reading in SRD files")
+  # The problem with simply using sp_params$srd is that it might be missing
+  # some predictors that we actually fit the model on
+  srd <- params$weekly_srd %>%
+    dplyr::inner_join(params$srd) %>%
+    dplyr::mutate(srd_id = checklist_id) %>%
+    dplyr::distinct(srd_id, .keep_all = TRUE)
+
+  # srd <- # weekly:
+  #   arrow::read_parquet(file.path(dir_srd_weekly,
+  #                                 sprintf("day_of_year=%s/part-0.parquet", srd_day))) %>%
+  #   #   filter(srd_id %in% m$model$sampled$srd_id) %>%
+  #   #   # annual:
+  #   #   inner_join(arrow::read_parquet(path_srd_year))
+  #   inner_join(params$srd %>%
+  #                mutate(srd_id = checklist_id) %>%
+  #                distinct(srd_id, .keep_all = TRUE))
+
+  stopifnot(nrow(srd) > 0)
+
+  # Dealing with CCI count predictive value:
+  count_params <- cci_count_values[[cci_count_varname]]
+  # have one version of optimized cci_count var, and one option that uses the
+  # default value
+  for(opt in c(TRUE)){#, FALSE)){
+    message("species: ", sp, " optimize: ", opt, " cci_count: ", cci_count_varname, " srd day: ", srd_day)
+    if(opt & cci_count_varname == "none"){
+      next()
+    }
+    outfile <- file.path('~/Documents/cci/cci_count/srd_preds',
+                         sprintf('%s_srd%s_%s_opt%s_%s.rds',
+                                 sp,
+                                 srd_day,
+                                 stringr::str_replace_all(cci_count_varname, "_", ""),
+                                 opt,
+                                 sx))
+    if(file.exists(outfile)){
+      message("file exists. exiting now")
+      return()
+    }
+    srd_effort <- ebirdstwf::optimize_srd_effort(model = m$model,
+                                                 data = m$model$sampled,
+                                                 srd_day = srd_day,
+                                                 params = params,
+                                                 optimize_cci_count = opt,
+                                                 optimize_richness = FALSE,
+                                                 cci_count_varname=cci_count_varname,
+                                                 cci_count_default = count_params$default_val,
+                                                 cci_count_valid_range = count_params$valid_range)
+
+    cci_count_value <- srd_effort[[cci_count_varname]]
+    # Predict to SRD using determined effort values
+    message("predicting to SRD...")
+    srd_preds_w <- predict_srd(model = m$model,
+                               srd = srd, srd_day = srd_day,
+                               srd_effort = srd_effort, params = params) %>%
+      dplyr::mutate(srd_day=srd_day,
+                    cci_count_value = cci_count_value,
+                    cci_count_varname = cci_count_varname,
+                    cci_count_optimized = as.character(opt))
+
+    message("Writing ", outfile)
+    saveRDS(srd_preds_w,
+            outfile)
+  }
+}
 
 
 #' Combine up to multiple SRD predictions objects to a single raster that can be plotted
 #' @export
-srds2raster <- function(list_srd_predictions, srd_day){
+srds2raster <- function(list_srd_predictions, srd_day, mask_by_binary = TRUE){
   #browser()
   # one big srd pred object
   srd_preds <- do.call(dplyr::bind_rows, list_srd_predictions)
@@ -355,16 +538,20 @@ srds2raster <- function(list_srd_predictions, srd_day){
   r_w_rel_abd <- r_w_occ * r_w_count
   r_w_rel_abd_thresh <- r_w_rel_abd
   r_w_range_thresh <- r_w_range
-  r_w_range_thresh[r_w_range_thresh == 0] <- NA
+  r_w_range_thresh[r_w_range == 0] <- NA
   r_w_rel_abd_thresh <- terra::mask(r_w_rel_abd, r_w_range_thresh)
+  r_w_count_thresh <- terra::mask(r_w_count, r_w_range_thresh)
+  r_w_count_thresh2 <- r_w_count
+  r_w_count_thresh2[r_w_range == 0] <- NA
   terra::varnames(r_w_rel_abd_thresh) <- names(r_w_rel_abd_thresh) <- sprintf("rel_abd_thresh_%s", srd_day)
   terra::varnames(r_w_rel_abd) <- names(r_w_rel_abd) <-sprintf("rel_abd_%s", srd_day)
   terra::varnames(r_w_occ) <- names(r_w_occ) <- sprintf("occ_%s", srd_day)
 
   terra::varnames(r_w_count) <- names(r_w_count) <- sprintf("count_%s", srd_day)
+  terra::varnames(r_w_count_thresh) <- names(r_w_count_thresh) <- sprintf("count_thresh%s", srd_day)
 
 
-  return(terra::rast(list(r_w_occ, r_w_count, r_w_rel_abd, r_w_rel_abd_thresh)))
+  return(terra::rast(list(r_w_occ, r_w_count, r_w_count_thresh, r_w_rel_abd, r_w_rel_abd_thresh)))
 
 
 }
@@ -372,22 +559,20 @@ srds2raster <- function(list_srd_predictions, srd_day){
 #' @param rstrs raster object to plot
 #' @param layer_to_plot index of raster to actually plot
 #' @param plot_dir directory name where map should be written
-#' @param type one of "rel_abd", "occ", or "count" (used for plot labels and file names only)
 #' @param optimized whether count CCI was optimized when predicting to the SRD
 #' @param cci_count_varname name of variable representing a count CCI
 #' @param cci_count_val value of CCI `cci_count_varname` used in predicting to SRD
 #' @param v_breaks vector of values to use to generate map color palette breaks. If NULL, will use values found in current raster layer.
 map_raster_countcci <- function(rstr, layer_to_plot, species,
                         plot_dir,
-                        type,
                         optimized,
                         cci_count_varname,
                         cci_count_vals,
                         v_breaks = NULL
 ){
   # mapping:
+  # usually, layers are: "occ_<srd day>", "count_<srd day>", "rel_abd_<srd day>", "rel_abd_thresh_<srd_day>"
   r <- rstr[[layer_to_plot]]
-
   # Kind of irrelevant since we only plot one layer at a time:
   if(terra::nlyr(r) > 4){
     r_agg <- mean(r, na.rm=TRUE) %>%
@@ -424,7 +609,7 @@ map_raster_countcci <- function(rstr, layer_to_plot, species,
   # map a single layer (week)
   r_proj <- ebirdstwf::project_raster(r, rt$template, method = "near")
 
-  png(file.path(plot_dir, sprintf("%s_%s_srd_%s_%s_opt%s.png", species, type,
+  png(file.path(plot_dir, sprintf("%s_%s_srd_%s_opt%s.png", species,
                                   names(r),
                                   stringr::str_replace_all(cci_count_varname, '_', ''),
                                   optimized)
@@ -457,7 +642,7 @@ map_raster_countcci <- function(rstr, layer_to_plot, species,
   ebirdstwf::add_map_text(species,#"Wood Thrush",
                x = 0.020, y = 0.035, cex = 9, pos = 4, font = 2)
   ebirdstwf::add_map_legend(palette = pal,
-                 title = type,#"Probability of detection",
+                 title = names(r),
                  labels = labels,
                  # use this if you're using min not 5th percentile as bottom label
                  # less_than = FALSE,
