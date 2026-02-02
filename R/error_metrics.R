@@ -1,4 +1,9 @@
 #' @export
+mse <- function(observed, predicted){
+  mean((observed - predicted)^2)
+}
+
+#' @export
 r_squared <- function(observed, predicted){
 # Note that this formulation is different from the square of the correlation coefficient
 
