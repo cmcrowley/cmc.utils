@@ -48,6 +48,7 @@ round_to_nearest <- function(v, constant=NULL, logbase=NULL,
       # down <- logbase^floor(log(x, base=logbase))
       # up <- logbase^ceiling(log(x, base=logbase))
       constant <- logbase^round(log(x, base=logbase))
+      return(constant)
     }
 
     # if(x %% constant == 0.5(constant) & ties != 'floor') {

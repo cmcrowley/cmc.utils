@@ -81,75 +81,126 @@ text_color <- function(){
 }
 
 #' @name plot_var_imp_rf
-#' @description Produce a ggplot of variable importances. If length(`rf_list`) > 1, will produce a multi-faceted plot with a panel for each `rf`
+#' Produce a ggplot of variable importances. If length(`rf_list`) > 1,
+#' will produce a multi-faceted plot with a panel for each `rf`. In this case to
+#' ease comparison among objects, points are colored by variable name.
 #' @param rf_list list of `ranger` model objects
 #' @param n_top (int) subset of variables for which to plot importances
 #' @param ... other arguments to pass to ggtheme()
 #' @export
 plot_var_imp_rf <- function(rf_list, n_top=NULL, facet_scales="free",
-                            names_function=NULL, ...) {
-  # do.call(rbind, lapply(rf_list, function(rf){}))
+                            names_function=NULL, text_multiplier = 1,...) {
   stopifnot(is.list(rf_list))
 
-  df_all <- do.call(rbind, lapply(seq_along(rf_list), function(i){
-    df <- get_var_imp_rf(rf_list[[i]]) %>%
-      slice_max(order_by = importance_value, n=n_top)
-    df$rf_name <- names(rf_list)[i]
-    df$r2_oob <- ifelse('r.squared' %in% names(rf_list[[i]]),
-                        round(rf_list[[i]]$r.squared, 3),
-                        round(1-rf_list[[i]]$prediction.error, 3))
-    return(df)
-  }))
-
-  if(!all(is.null(df_all$rf_name))){
-    df_all$rf_name <- factor(df_all$rf_name, levels=names(rf_list), ordered=TRUE)
+  # Determine depth of list (& therefore structure of plot)
+  if(class(rf_list[[1]]) == "list"){
+    multilevel <- TRUE
+    # We have two levels of nesting, so we'll use facet_grid,
+    # taking the first level as the columns and second level as the rows
+    cols <- names(rf_list)
+    rows <- names(rf_list[[1]])
+    # Check that each element of cols() has the same set of rows
+    all_second_level <- unique(unlist(lapply(rf_list, names), use.names = FALSE))
+    if(!setequal(rows, all_second_level)){
+      error("mismatch in units")
+    }
+  } else{
+    multilevel <- FALSE
   }
+
+  parse_rfl <- function(rfl){
+    df_all <- do.call(rbind, lapply(seq_along(rfl), function(i){
+      df <- get_var_imp_rf(rfl[[i]]) %>%
+        slice_max(order_by = importance_value, n=n_top)
+      df$row_var <- names(rfl)[i]
+      df$r2_oob <- ifelse('r.squared' %in% names(rfl[[i]]),
+                          round(rfl[[i]]$r.squared, 3),
+                          round(1-rfl[[i]]$prediction.error, 3))
+      return(df)
+    }))
+    return(df_all)
+  }
+  ll <- lapply(rf_list, parse_rfl)
+  if(multilevel){
+     df_plot <- do.call(rbind, lapply(1:length(ll), function(i){
+       df_imp <- ll[[i]]
+       df_imp[["col_var"]] <- cols[i]
+      return(df_imp)
+  }) )
+  } else{
+    df_plot <- ll[[1]]
+    df_plot[["col_var"]] <- NA
+  }
+
+  df_plot <- df_plot %>%
+    dplyr::mutate(rf_name = sprintf("%s_%s", col_var, row_var)) %>%
+    group_by(col_var, row_var) %>%
+    arrange(importance_value) %>%
+    mutate(order = seq_along(importance_value)) %>%
+    ungroup()
+
+
+  # if(!all(is.null(df_all$rf_name))){
+  #   df_all$rf_name <- factor(df_all$rf_name, levels=names(rf_list), ordered=TRUE)
+  # }
 
   if(!is.null(names_function)){
-    df_all$var_name <- names_function(df_all$var_name)
+    df_plot$var_name <- names_function(df_plot$var_name)
   }
 
-  ordering <- df_all %>%
-    group_by(rf_name) %>%
-    slice_max(order_by = importance_value, n=n_top) %>%
-    droplevels() %>%
-    do(data.frame(al=levels(reorder(interaction(.$rf_name, .$var_name, drop=TRUE),
-                                    .$importance_value)))) %>%
-    pull(al)
+  # ordering <- df_plot %>%
+  #   group_by(rf_name) %>%
+  #   slice_max(order_by = importance_value, n=n_top) %>%
+  #   droplevels() %>%
+  #   do(data.frame(al=levels(reorder(interaction(.$rf_name, .$var_name, drop=TRUE),
+  #                                   .$importance_value)))) %>%
+  #   pull(al)
 
-  varname <- gsub("^.*\\.", "", ordering)
+  # varname <- gsub("^.*\\.", "", ordering)
+
 
   # R^2 labels and x coordinate of placement:
-  label_importance <- df_all %>%
-    group_by(rf_name) %>%
+  label_importance <- df_plot %>%
+    group_by(row_var, col_var, rf_name) %>%
     summarize(x_placement = median(c(min(importance_value),
                                      max(importance_value))))
 
-  r2_labels <- df_all %>%
-    distinct(rf_name, .keep_all=TRUE) %>%
-    select(rf_name, r2_oob) %>%
-    full_join(label_importance, by='rf_name')
+  r2_labels <- df_plot %>%
+    distinct(row_var, col_var, rf_name, r2_oob) %>%
+    full_join(label_importance)
 
-  p <- df_all %>%
-    mutate(var = factor(interaction(rf_name, var_name), levels=ordering)) %>%
+  # order_by <- cols[1]
+  p <- df_plot %>%
+    group_by(col_var, row_var) %>%
+    arrange(col_var, row_var, importance_value) %>%
+    ungroup() %>%
+    mutate(var_ordered = paste(var_name, row_var, col_var, sep = "_")) %>%
+    mutate(var_ordered = factor(var_ordered, levels = unique(.data[["var_ordered"]]))) %>%
     # drops unused levels in a way that actually works here:
-    filter(!is.na(var)) %>%
-    ggplot(aes(x=round(importance_value), y = var)) +
+    # filter(!is.na(var)) %>%
+    ggplot(aes(x=round(importance_value),
+               y = var_ordered))+# factor(var_ordered, labels = gsub("_.*", "", var_ordered)))) +
+    ggh4x::facet_grid2(row_var ~
+                         factor(col_var, levels = c(cols[1], setdiff(cols, cols[1]))),
+                       scales = "free", independent = "y") +
     # geom_line(aes(color=var_name, group=var_name)) +
     geom_dotplot(binaxis = 'y',
                  aes(fill=var_name, color=var_name)) +
-    scale_y_discrete(breaks=ordering, labels = varname) +
+    scale_y_discrete(labels = function(x) gsub("_0.*", "", x)) + # Remove suffix from labels
+
     ggplot2::geom_text(data=r2_labels,
                        ggplot2::aes(label=sprintf("R2 =\n %s",
                                                   as.character(r2_oob)),
                                     x=x_placement),
-                       y=3) +
-    facet_wrap(~rf_name, scales=facet_scales) +
+                       # size = 14*text_multiplier,
+                       y=2) +
+
+    # facet_grid(row_var~col_var, scales="free") +
     ggplot2::labs(y='Variable',
                   x='Importance Value',
                   title = sprintf("Top %s variables by model", n_top))
 
-  return(ggtheme(p, scale_x_date=FALSE, ...) +
+  return(ggtheme(p, scale_x_date=FALSE, text_multiplier = text_multiplier) +
            ggplot2::theme(legend.position='none') +
            ggplot2::theme(axis.text.y = element_text(hjust=1))
   )
