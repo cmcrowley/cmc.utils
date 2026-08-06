@@ -1,3 +1,16 @@
+#' Given a data frame, return column names that look like species codes
+#' @export
+detect_species_names <- function(df) {
+  is_species_col <- function(col_name) {
+    if (!grepl("^[a-z0-9]+$", col_name)) return(FALSE)
+    vals <- df[[col_name]]
+    vals <- vals[!is.na(vals)]
+    is.numeric(vals) && all(vals == floor(vals)) && all(vals >= -1)
+  }
+  setdiff(names(df)[vapply(names(df), is_species_col, logical(1))],
+          c("mountain", "island", "year"))
+}
+
 #' Get family and order of birds using the Open Tree of Life
 #' (assumed to be installed and data downloaded to local disk)
 #' @export
@@ -520,7 +533,17 @@ srd_pred_countcci <- function(fit_predict,
 srds2raster <- function(list_srd_predictions, srd_day, mask_by_binary = TRUE){
   #browser()
   # one big srd pred object
-  srd_preds <- do.call(dplyr::bind_rows, list_srd_predictions)
+  if("data.frame" %in% class(list_srd_predictions)){
+    srd_preds <- list_srd_predictions
+  } else if(class(list_srd_predictions) == "list"){
+    srd_preds <- do.call(dplyr::bind_rows, list_srd_predictions)
+  }
+  srd_day <- unique(srd_preds$day_of_year)
+  # stopifnot(length(srd_day) == 1) commented out 4/21
+  if(length(srd_day) > 1){
+    srd_day <- paste(range(srd_day), collapse = "-")
+  }
+
 
   # Template:
   r_w <- terra::rast("~/data/erd_2023/srd_3km_mask_ocean.tif")
@@ -633,14 +656,14 @@ map_raster_countcci <- function(rstr, layer_to_plot, species,
   # labels and legend
   ebirdstwf::add_map_text(sprintf('CCI count metric: %s', cci_count_varname),
                x = 0.020, y = (1-0.035),#0.17,
-               cex = 6, pos = 4)
+               cex = 5, pos = 4)
   ebirdstwf::add_map_text(sprintf("Optimized: %s; %s", optimized, paste(round(sort(cci_count_vals),1), collapse=", ")),
                x = 0.020, y = (1-0.08),#0.125,
-               cex = 6, pos = 4)
+               cex = 5, pos = 4)
   ebirdstwf::add_map_text(names(r),
-               x = 0.020, y = 0.08, cex = 6, pos = 4)
+               x = 0.020, y = 0.08, cex = 5, pos = 4)
   ebirdstwf::add_map_text(species,#"Wood Thrush",
-               x = 0.020, y = 0.035, cex = 9, pos = 4, font = 2)
+               x = 0.020, y = 0.035, cex = 8, pos = 4, font = 2)
   ebirdstwf::add_map_legend(palette = pal,
                  title = names(r),
                  labels = labels,
