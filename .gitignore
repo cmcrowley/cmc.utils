@@ -1,6 +1,6 @@
 *.Rproj
 .Rproj.user
 .Rhistory
-DESCRIPTION
-NAMESPACE
+#DESCRIPTION
+#NAMESPACE
 *sensitive*
