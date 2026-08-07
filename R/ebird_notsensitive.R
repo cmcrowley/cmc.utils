@@ -1,3 +1,14 @@
+#' Removes any predictor names from `params$PREDICTOR_LIST` for which the values
+#' are constant in `dat`
+#' @export
+build_predictor_list <- function(params, dat){
+  stopifnot("PREDICTOR_LIST" %in% names(params))
+  predictors <- unlist(params$PREDICTOR_LIST)
+  data_constants <- cmc.utils:::get_constant_vars(dat)
+  to_rm <- intersect(predictors, data_constants)
+  setdiff(predictors, to_rm)
+}
+
 #' Given a data frame, return column names that look like species codes
 #' @export
 detect_species_names <- function(df) {
