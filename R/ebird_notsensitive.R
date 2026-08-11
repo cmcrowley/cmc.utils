@@ -18,8 +18,14 @@ detect_species_names <- function(df) {
     vals <- vals[!is.na(vals)]
     is.numeric(vals) && all(vals == floor(vals)) && all(vals >= -1)
   }
-  setdiff(names(df)[vapply(names(df), is_species_col, logical(1))],
+  spp <- setdiff(names(df)[vapply(names(df), is_species_col, logical(1))],
           c("mountain", "island", "year"))
+  sus <- setdiff(spp, ebirdst::ebird_runs$species_code)
+  if(length(sus) > 0){
+    warning("Verify that the following are real species codes:\n\t",
+            paste(sus, collapse = "\n\t"))
+  }
+
 }
 
 #' Get family and order of birds using the Open Tree of Life
@@ -85,15 +91,15 @@ ith_erd2params <- function(erd, sp, stixel_id,
                            cci_occ = c(TRUE, FALSE),
                            cci_count = c(TRUE, FALSE)
                            ){
-  stopifnot(length(tixel_num)==1)
+  stopifnot(length(stixel_id)==1)
   stopifnot(sp %in% names(erd))
   to_obs <- function(sp){
     return("obs")
   }
-  spp_names <- detect_
+  spp_names <- detect_species_names(erd)
   dat <- erd %>%
-    dplyr::select(-any_of(spp_names()[spp_names() != sp])) |>
-    dplyr::filter(stixel_id==as.character(tixel_num)) |>
+    dplyr::select(-any_of(spp_names[spp_names != sp])) |>
+    dplyr::filter(stixel_id==as.character(stixel_id)) |>
     dplyr::rename_with(to_obs, sp)
 
   predictors <- names2chr(astwbd_c1_ed, astwbd_c1_pland, astwbd_c2_ed, astwbd_c2_pland,
@@ -151,7 +157,7 @@ ith_erd2params <- function(erd, sp, stixel_id,
 
 
   return(list(erd=dat,
-              stixel_id=sprintf('ith_erd_t%s', tixel_num),
+              stixel_id=stixel_id,
               stixel_depth_days=length(unique(dat$day_of_year)),
               num_pds = 0,
               pd_features = NULL,
