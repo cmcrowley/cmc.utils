@@ -33,8 +33,8 @@ detect_species_names <- function(df) {
 #' @export
 get_taxa <- function(sp_codes){
   df <- data.frame(SPECIES_CODE = sp_codes)
-  tx <- clootl::taxonomyGet(2025) %>% select(SPECIES_CODE, FAMILY, ORDER)
-  df <- df %>% left_join(tx)
+  tx <- clootl::taxonomyGet(2025) |> select(SPECIES_CODE, FAMILY, ORDER)
+  df <- df |> left_join(tx)
 }
 
 #' @export
@@ -47,10 +47,10 @@ stixelid_2_season <- function(stixel_ids){
 
 #' @export
 species_prevalence <- function(dat, spp_names){
-  spp_dat <- dat %>%
+  spp_dat <- dat |>
     dplyr::select(all_of(spp_names))
   spp_dat[spp_dat != 0] <- 1
-  colMeans(spp_dat) %>%
+  colMeans(spp_dat) |>
     sort(decreasing = TRUE)
 }
 
@@ -73,9 +73,14 @@ get_species <- function(x){
 
 #' @export
 is_resident <- function(species){
-  stopifnot(species %in% ebirdst::ebirdst_runs$species_code)
-  ebirdst::ebirdst_runs[ebirdst::ebirdst_runs$species_code == species, "is_resident"] |>
+  # stopifnot(species %in% ebirdst::ebirdst_runs$species_code)
+  ebirdst_lookup <- ebirdst::ebirdst_runs[ebirdst::ebirdst_runs$species_code == species, "is_resident"] |>
     as.logical()
+
+  if(length(ebirdst_lookup) == 0 || is.na(ebirdst_lookup)){
+    return(FALSE)
+  }
+  return(ebirdst_lookup)
 }
 
 #' Create prepped args for running ebirdstwf::fit_model_stixel() using only a test data frame.
@@ -92,11 +97,12 @@ is_resident <- function(species){
 #'
 #' @export
 ith_erd2params <- function(erd, sp, stixel_id,
-                           cci_occ = c(TRUE, FALSE),
-                           cci_count = c(TRUE, FALSE),
+                           cci_occ = FALSE,
+                           cci_count = FALSE,
                            additional_predictors = NULL,
                            config_path = "~/stem_hwf/data_prep/data-prep_configuration.json"
                            ){
+  stopifnot(is.logical(cci_occ), is.logical(cci_count))
   stopifnot(length(stixel_id) == 1)
   stopifnot(sp %in% names(erd))
   stopifnot(file.exists(path.expand(config_path)))
@@ -106,7 +112,7 @@ ith_erd2params <- function(erd, sp, stixel_id,
   to_obs <- function(sp) return("obs")
 
   spp_names <- detect_species_names(erd)
-  dat <- erd %>%
+  dat <- erd |>
     dplyr::select(-any_of(spp_names[spp_names != sp])) |>
     dplyr::filter(stixel_id == as.character(.env$stixel_id)) |>
     dplyr::rename_with(to_obs, sp)
@@ -114,7 +120,6 @@ ith_erd2params <- function(erd, sp, stixel_id,
   is_cci <- cci_occ | cci_count
 
   obs_covars <- c(config$date_covariates, config$observation_covariates)
-  obs_covars <- setdiff(obs_covars, c("year", config$cci_variables))
 
   weather_covars <- config$detection_covariates
 
@@ -122,6 +127,15 @@ ith_erd2params <- function(erd, sp, stixel_id,
   if (is_cci) {
     habitat_covars <- c(habitat_covars, config$cci_covariates)
   }
+
+  # TODO: remove this patch once we've updated to ERD2025:
+  obs_covars <- obs_covars[!obs_covars %in%
+                             setdiff(obs_covars, names(erd))]
+  weather_covars <- weather_covars[!weather_covars %in%
+                                     setdiff(weather_covars, names(erd))]
+  habitat_covars <- habitat_covars[!habitat_covars %in%
+                                     setdiff(habitat_covars, names(erd))]
+
 
   predictor_list <- c(obs_covars, weather_covars, habitat_covars)
 
@@ -132,9 +146,15 @@ ith_erd2params <- function(erd, sp, stixel_id,
     predictor_list <- c(predictor_list, additional_predictors)
   }
 
+  is_res <- is_resident(species = sp)
+
   return(list(erd = dat,
               stixel_id = stixel_id,
               stixel_depth_days = length(unique(dat$day_of_year)),
+              IS_RESIDENT = is_res,
+              FACTOR_COVARS = factor_covars,
+              ALWAYS_SPLIT_COVARS = always_split,
+              PREDICTOR_LIST = predictor_list,
               num_pds = 0,
               pd_features = NULL,
               params = list(
@@ -281,7 +301,7 @@ make_tixels <- function(doy, start_doy){
                 lapply(names(groups), function(name){
                   data.frame(day=groups[[name]], bin=name)
                 }))
-  leaveouts <- doy[!doy %in% df$day] %>% unique()
+  leaveouts <- doy[!doy %in% df$day] |> unique()
   df <- bind_rows(df,
                   do.call(rbind, lapply(leaveouts, function(lo){
                     # find day that is closest and use whatever that group is
@@ -327,16 +347,16 @@ map_habitats <- function(path_erd,
                                        elevation_250m_median, elevation_250m_sd,
                                        elevation_30m_median, elevation_30m_sd)
 
-  erd_checklists <- arrow::read_parquet(path_erd) %>%
+  erd_checklists <- arrow::read_parquet(path_erd) |>
     dplyr::filter(dplyr::between(latitude, lat_min, lat_max),
-                  dplyr::between(longitude, lon_min, lon_max)) %>%
+                  dplyr::between(longitude, lon_min, lon_max)) |>
     select(all_of(c('latitude', 'longitude', cluster_vars)))
 
 
 
   n_clusterings = length(n_clusters)
 
-  kclust <- kmeans(x=erd_checklists %>% select(all_of(cluster_vars)), centers=6)
+  kclust <- kmeans(x=erd_checklists |> select(all_of(cluster_vars)), centers=6)
   erd_checklists$hab_cluster <- kclust$cluster
 
   # sa_map <- OpenStreetMap::openmap(c(lat2, lon1), c(lat1, lon2), zoom = 10,
@@ -344,12 +364,12 @@ map_habitats <- function(path_erd,
   #
   # # reproject onto WGS84
   # sa_map2 <- openproj(sa_map)
-cl_sf <- erd_checklists %>% cmc.utils::dat2sf() %>% sf::st_transform(crs=3857)
+cl_sf <- erd_checklists |> cmc.utils::dat2sf() |> sf::st_transform(crs=3857)
 basemap_ggplot(ext=sf::st_bbox(cl_sf),
                map_service='osm',
                map_type='streets')
- p <- erd_checklists %>%
-    cmc.utils::dat2sf() %>%
+ p <- erd_checklists |>
+    cmc.utils::dat2sf() |>
     ggplot() +
     geom_sf(aes(color=factor(hab_cluster)))
 
@@ -357,9 +377,9 @@ descr <- as.data.frame(kclust$centers)
 # find which ones have no variance
 not_meaningful <- which(sapply(names(descr), function(colname){
   var(descr[[colname]]) == 0
-})) %>% names()
+})) |> names()
 
-descr <- descr %>% select(-all_of(not_meaningful))
+descr <- descr |> select(-all_of(not_meaningful))
 ebirdst_varnames(names(descr))
 
 kclust$iter
@@ -367,8 +387,8 @@ kclust$iter
 kclust$ifault
 
 
-descr %>%
-  mutate(cluster=1:6) %>%
+descr |>
+  mutate(cluster=1:6) |>
   tidyr::pivot_longer(cols=-c('cluster', 'latitude', 'longitude'))
   ggplot(aes(x))
 
@@ -555,8 +575,8 @@ srd_pred_countcci <- function(fit_predict,
   )
 
   # Get SRD info and SRD data:
-  # m$model$sampled <- erd2srd %>%
-  #   mutate(checklist_id = as.character(checklist_id)) %>%
+  # m$model$sampled <- erd2srd |>
+  #   mutate(checklist_id = as.character(checklist_id)) |>
   #   inner_join(m$model$sampled)
 
   stopifnot(nrow(m$model$sampled) > 0)
@@ -566,7 +586,7 @@ srd_pred_countcci <- function(fit_predict,
   # sp_params <- readRDS(sp_params_file)
   stixel_depth <-  (366 / 13) #if (params$IS_RESIDENT) 366 else (366 / 13)
   stixel_params <- ebirdstwf::parse_stixel_id(sx, stixel_depth = stixel_depth)
-  # srd_days <- subset_days(m$model$sampled$closest_srd_day %>% unique(),
+  # srd_days <- subset_days(m$model$sampled$closest_srd_day |> unique(),
   #                         stixel_params$start_day, stixel_params$end_day)
   # stopifnot(srd_day %in% srd_days)
 
@@ -575,19 +595,19 @@ srd_pred_countcci <- function(fit_predict,
   message("Reading in SRD files")
   # The problem with simply using sp_params$srd is that it might be missing
   # some predictors that we actually fit the model on
-  srd <- params$weekly_srd %>%
-    dplyr::inner_join(params$srd) %>%
-    dplyr::mutate(srd_id = checklist_id) %>%
+  srd <- params$weekly_srd |>
+    dplyr::inner_join(params$srd) |>
+    dplyr::mutate(srd_id = checklist_id) |>
     dplyr::distinct(srd_id, .keep_all = TRUE)
 
   # srd <- # weekly:
   #   arrow::read_parquet(file.path(dir_srd_weekly,
-  #                                 sprintf("day_of_year=%s/part-0.parquet", srd_day))) %>%
-  #   #   filter(srd_id %in% m$model$sampled$srd_id) %>%
+  #                                 sprintf("day_of_year=%s/part-0.parquet", srd_day))) |>
+  #   #   filter(srd_id %in% m$model$sampled$srd_id) |>
   #   #   # annual:
   #   #   inner_join(arrow::read_parquet(path_srd_year))
-  #   inner_join(params$srd %>%
-  #                mutate(srd_id = checklist_id) %>%
+  #   inner_join(params$srd |>
+  #                mutate(srd_id = checklist_id) |>
   #                distinct(srd_id, .keep_all = TRUE))
 
   stopifnot(nrow(srd) > 0)
@@ -627,7 +647,7 @@ srd_pred_countcci <- function(fit_predict,
     message("predicting to SRD...")
     srd_preds_w <- predict_srd(model = m$model,
                                srd = srd, srd_day = srd_day,
-                               srd_effort = srd_effort, params = params) %>%
+                               srd_effort = srd_effort, params = params) |>
       dplyr::mutate(srd_day=srd_day,
                     cci_count_value = cci_count_value,
                     cci_count_varname = cci_count_varname,
@@ -710,7 +730,7 @@ map_raster_countcci <- function(rstr, layer_to_plot, species,
   r <- rstr[[layer_to_plot]]
   # Kind of irrelevant since we only plot one layer at a time:
   if(terra::nlyr(r) > 4){
-    r_agg <- mean(r, na.rm=TRUE) %>%
+    r_agg <- mean(r, na.rm=TRUE) |>
       aggregate(fact=9)
   } else{
     r_agg <- r
@@ -722,9 +742,9 @@ map_raster_countcci <- function(rstr, layer_to_plot, species,
     ebirdstwf::define_projection()
   ext_crs <- ebirdstwf::raster_bounding_box(r_agg, crs=crs)
 
-  v <- r %>%
-    terra::crop(ext_sinu) %>%
-    terra::values(na.rm=TRUE) %>%
+  v <- r |>
+    terra::crop(ext_sinu) |>
+    terra::values(na.rm=TRUE) |>
     as.vector()
 
   v <- v[v>0]
