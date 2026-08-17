@@ -20,7 +20,7 @@ get_date_quantiles <- function(dates, probs){
   as.Date(quantile(as.numeric(dates), probs), origin="1970-01-01")
 }
 
-#' Convert a vector of dates to values on [0,1]
+#' Convert a vector of dates to values to lie between 0 and 1.
 #' @param dates; Date
 #'
 #' @export
