@@ -20,12 +20,12 @@ detect_species_names <- function(df) {
   }
   spp <- setdiff(names(df)[vapply(names(df), is_species_col, logical(1))],
           c("mountain", "island", "year"))
-  sus <- setdiff(spp, ebirdst::ebird_runs$species_code)
+  sus <- setdiff(spp, ebirdst::ebirdst_runs$species_code)
   if(length(sus) > 0){
     warning("Verify that the following are real species codes:\n\t",
             paste(sus, collapse = "\n\t"))
   }
-
+  return(spp)
 }
 
 #' Get family and order of birds using the Open Tree of Life
@@ -82,115 +82,86 @@ is_resident <- function(species){
 #'
 #' @param erd data frame with one observation per checklist (wide form, with species as columns)
 #' @param sp species code to prepare
-#' @param tixel temporal group subset to prepare (to best simulate a stixel)
+#' @param stixel_id stixel to run
 #' @param cci_occ Will the predictors be used to run a cci occurrence model?
 #' @param cci_count Will the predictors be used to run a cci count model?
+#' @param additional_predictors Character vector of names to add to
+#' PREDICTOR_LIST. Useful when testing a new feature (e.g. "mu_os" for the count
+#'  model only).
+#' @param config_path Path to stem_hwf data-prep_configuration.json.
 #'
 #' @export
 ith_erd2params <- function(erd, sp, stixel_id,
                            cci_occ = c(TRUE, FALSE),
-                           cci_count = c(TRUE, FALSE)
+                           cci_count = c(TRUE, FALSE),
+                           additional_predictors = NULL,
+                           config_path = "~/stem_hwf/data_prep/data-prep_configuration.json"
                            ){
-  stopifnot(length(stixel_id)==1)
+  stopifnot(length(stixel_id) == 1)
   stopifnot(sp %in% names(erd))
-  to_obs <- function(sp){
-    return("obs")
-  }
+  stopifnot(file.exists(path.expand(config_path)))
+
+  config <- jsonlite::read_json(path.expand(config_path), simplifyVector = TRUE)
+
+  to_obs <- function(sp) return("obs")
+
   spp_names <- detect_species_names(erd)
   dat <- erd %>%
     dplyr::select(-any_of(spp_names[spp_names != sp])) |>
-    dplyr::filter(stixel_id==as.character(stixel_id)) |>
+    dplyr::filter(stixel_id == as.character(.env$stixel_id)) |>
     dplyr::rename_with(to_obs, sp)
 
-  predictors <- names2chr(astwbd_c1_ed, astwbd_c1_pland, astwbd_c2_ed, astwbd_c2_pland,
-  astwbd_c3_ed, astwbd_c3_pland, cci, cds_d2m, cds_hcc, cds_i10fg, cds_lcc,
-  cds_mcc, cds_msl, cds_rf, cds_sf, cds_slc, cds_t2m, cds_u10, cds_v10,
-  day_of_year, eastness_1km_median, eastness_1km_sd, eastness_90m_median,
-  eastness_90m_sd, effort_distance_km, effort_hrs, effort_speed_kmph,
-  elevation_250m_median, elevation_250m_sd, elevation_30m_median,
-  elevation_30m_sd, evi_median, evi_sd, gsw_c2_ed, gsw_c2_pland, gsw_c3_ed,
-  gsw_c3_pland, has_evi, has_shoreline, is_stationary, island,
-  mcd12q1_lccs1_c1_ed, mcd12q1_lccs1_c1_pland, mcd12q1_lccs1_c11_ed,
-  mcd12q1_lccs1_c11_pland, mcd12q1_lccs1_c12_ed, mcd12q1_lccs1_c12_pland,
-  mcd12q1_lccs1_c13_ed, mcd12q1_lccs1_c13_pland, mcd12q1_lccs1_c14_ed,
-  mcd12q1_lccs1_c14_pland, mcd12q1_lccs1_c15_ed, mcd12q1_lccs1_c15_pland,
-  mcd12q1_lccs1_c16_ed, mcd12q1_lccs1_c16_pland, mcd12q1_lccs1_c2_ed,
-  mcd12q1_lccs1_c2_pland, mcd12q1_lccs1_c21_ed, mcd12q1_lccs1_c21_pland,
-  mcd12q1_lccs1_c22_ed, mcd12q1_lccs1_c22_pland, mcd12q1_lccs1_c255_ed,
-  mcd12q1_lccs1_c255_pland, mcd12q1_lccs1_c31_ed, mcd12q1_lccs1_c31_pland,
-  mcd12q1_lccs1_c32_ed, mcd12q1_lccs1_c32_pland, mcd12q1_lccs1_c41_ed,
-  mcd12q1_lccs1_c41_pland, mcd12q1_lccs1_c42_ed, mcd12q1_lccs1_c42_pland,
-  mcd12q1_lccs1_c43_ed, mcd12q1_lccs1_c43_pland, mcd12q1_lccs2_c25_ed,
-  mcd12q1_lccs2_c25_pland, mcd12q1_lccs2_c35_ed, mcd12q1_lccs2_c35_pland,
-  mcd12q1_lccs2_c36_ed, mcd12q1_lccs2_c36_pland, mcd12q1_lccs3_c27_ed,
-  mcd12q1_lccs3_c27_pland, mcd12q1_lccs3_c50_ed, mcd12q1_lccs3_c50_pland,
-  mcd12q1_lccs3_c51_ed, mcd12q1_lccs3_c51_pland, moon_altitude, moon_fraction,
-  northness_1km_median, northness_1km_sd, northness_90m_median, northness_90m_sd,
-  ntl_mean, ntl_sd, num_observers, road_density_c1, road_density_c2,
-  road_density_c3, road_density_c4, road_density_c5, shoreline_chlorophyll_mean,
-  shoreline_chlorophyll_sd, shoreline_emu_physical_c1_density,
-  shoreline_emu_physical_c10_density, shoreline_emu_physical_c11_density,
-  shoreline_emu_physical_c12_density, shoreline_emu_physical_c13_density,
-  shoreline_emu_physical_c14_density, shoreline_emu_physical_c15_density,
-  shoreline_emu_physical_c16_density, shoreline_emu_physical_c17_density,
-  shoreline_emu_physical_c18_density, shoreline_emu_physical_c19_density,
-  shoreline_emu_physical_c2_density, shoreline_emu_physical_c20_density,
-  shoreline_emu_physical_c21_density, shoreline_emu_physical_c22_density,
-  shoreline_emu_physical_c23_density, shoreline_emu_physical_c3_density,
-  shoreline_emu_physical_c4_density, shoreline_emu_physical_c5_density,
-  shoreline_emu_physical_c6_density, shoreline_emu_physical_c7_density,
-  shoreline_emu_physical_c8_density, shoreline_emu_physical_c9_density,
-  shoreline_emu_physical_n, shoreline_erodibility_c1_density,
-  shoreline_erodibility_c2_density, shoreline_erodibility_c3_density,
-  shoreline_erodibility_c4_density, shoreline_erodibility_n,
-  shoreline_outflow_density_mean, shoreline_outflow_density_sd,
-  shoreline_sinuosity_mean, shoreline_sinuosity_sd, shoreline_slope_mean,
-  shoreline_slope_sd, shoreline_tidal_range_mean, shoreline_tidal_range_sd,
-  shoreline_turbidity_mean, shoreline_turbidity_sd, shoreline_waveheight_mean,
-  shoreline_waveheight_sd, solar_noon_diff, year)
+  is_cci <- cci_occ | cci_count
 
-  if(cci_occ | cci_count) {
-    # Add habitat diversity, remove cci and year:
-    predictors <- setdiff(c(predictors, "mcd12q1_lccs1_diversity"),
-                          c("cci", "year"))
+  obs_covars <- c(config$date_covariates, config$observation_covariates)
+  obs_covars <- setdiff(obs_covars, c("year", config$cci_variables))
+
+  weather_covars <- config$detection_covariates
+
+  habitat_covars <- c(config$habitat_covariates, config$land_covariates)
+  if (is_cci) {
+    habitat_covars <- c(habitat_covars, config$cci_covariates)
   }
 
+  predictor_list <- c(obs_covars, weather_covars, habitat_covars)
 
-  return(list(erd=dat,
-              stixel_id=stixel_id,
-              stixel_depth_days=length(unique(dat$day_of_year)),
+  factor_covars <- intersect(config$categorical_variables, predictor_list)
+  always_split  <- intersect(config$always_split_variables, predictor_list)
+
+  if (!is.null(additional_predictors)) {
+    predictor_list <- c(predictor_list, additional_predictors)
+  }
+
+  return(list(erd = dat,
+              stixel_id = stixel_id,
+              stixel_depth_days = length(unique(dat$day_of_year)),
               num_pds = 0,
               pd_features = NULL,
               params = list(
-                FOLD_N=NULL,#200,
-                NUM_PD_FOLDS=NULL,
-                NUM_SHARDS_SUMMARIZE=NULL,
-                SRD_PRED_YEAR=NULL,
-                MIN_ERD_YEAR=NULL,
-                IS_CCI=NULL,
-                ENSEMBLE_SUPPORT=NULL,
-                SRD_PRED_DAYS=NULL,
-                SRD_WINDOW_WIDTH=NULL,
-                DATE_NAMES=NULL,
-                HABITAT_COVARS=NULL,
-                OBS_COVARS=NULL,
-                WEATHER_COVARS=NULL,
-                PREDICTOR_LIST=predictors,
-                WEEKLY_SRD_COVARS=NULL,
-                ALWAYS_SPLIT_COVARS=c("island", "mountain",
-                                      "circular_day_of_year_sin",
-                                      "circular_day_of_year_cos",
-                                      "has_shoreline", "has_evi",
-                                      "has_ocean_chlorophyll", "has_ocean_sst",
-                                      "has_ocean_ssta"),
-                COVARS_TO_JITTER=cmc.utils::names2chr(eastness_1km_median,eastness_1km_sd,eastness_90m_median,eastness_90m_sd,northness_1km_median,northness_1km_sd,northness_90m_median,northness_90m_sd,elevation_250m_median,elevation_250m_sd,elevation_30m_median,elevation_30m_sd,astwbd_c1_ed,astwbd_c1_pland,astwbd_c2_ed,astwbd_c2_pland,astwbd_c3_ed,astwbd_c3_pland,gsw_c2_pland,gsw_c2_ed,gsw_c3_pland,gsw_c3_ed,ntl_mean,ntl_sd,road_density_c1,road_density_c2,road_density_c3,road_density_c4,road_density_c5,mcd12q1_lccs1_c1_ed,mcd12q1_lccs1_c1_pland,mcd12q1_lccs1_c2_ed,mcd12q1_lccs1_c2_pland,mcd12q1_lccs1_c11_ed,mcd12q1_lccs1_c11_pland,mcd12q1_lccs1_c12_ed,mcd12q1_lccs1_c12_pland,mcd12q1_lccs1_c13_ed,mcd12q1_lccs1_c13_pland,mcd12q1_lccs1_c14_ed,mcd12q1_lccs1_c14_pland,mcd12q1_lccs1_c15_ed,mcd12q1_lccs1_c15_pland,mcd12q1_lccs1_c16_ed,mcd12q1_lccs1_c16_pland,mcd12q1_lccs1_c21_ed,mcd12q1_lccs1_c21_pland,mcd12q1_lccs1_c22_ed,mcd12q1_lccs1_c22_pland,mcd12q1_lccs1_c31_ed,mcd12q1_lccs1_c31_pland,mcd12q1_lccs1_c32_ed,mcd12q1_lccs1_c32_pland,mcd12q1_lccs1_c41_ed,mcd12q1_lccs1_c41_pland,mcd12q1_lccs1_c42_ed,mcd12q1_lccs1_c42_pland,mcd12q1_lccs1_c43_ed,mcd12q1_lccs1_c43_pland,mcd12q1_lccs1_c255_ed,mcd12q1_lccs1_c255_pland,mcd12q1_lccs2_c25_ed,mcd12q1_lccs2_c25_pland,mcd12q1_lccs2_c35_ed,mcd12q1_lccs2_c35_pland,mcd12q1_lccs2_c36_ed,mcd12q1_lccs2_c36_pland,mcd12q1_lccs3_c27_ed,mcd12q1_lccs3_c27_pland,mcd12q1_lccs3_c50_ed,mcd12q1_lccs3_c50_pland,mcd12q1_lccs3_c51_ed,mcd12q1_lccs3_c51_pland,shoreline_waveheight_mean,shoreline_waveheight_sd,shoreline_tidal_range_mean,shoreline_tidal_range_sd,shoreline_chlorophyll_mean,shoreline_chlorophyll_sd,shoreline_turbidity_mean,shoreline_turbidity_sd,shoreline_sinuosity_mean,shoreline_sinuosity_sd,shoreline_slope_mean,shoreline_slope_sd,shoreline_outflow_density_mean,shoreline_outflow_density_sd,shoreline_erodibility_n,shoreline_erodibility_c1_density,shoreline_erodibility_c2_density,shoreline_erodibility_c3_density,shoreline_erodibility_c4_density,shoreline_emu_physical_n,shoreline_emu_physical_c1_density,shoreline_emu_physical_c2_density,shoreline_emu_physical_c3_density,shoreline_emu_physical_c4_density,shoreline_emu_physical_c5_density,shoreline_emu_physical_c6_density,shoreline_emu_physical_c7_density,shoreline_emu_physical_c8_density,shoreline_emu_physical_c9_density,shoreline_emu_physical_c10_density,shoreline_emu_physical_c11_density,shoreline_emu_physical_c12_density,shoreline_emu_physical_c13_density,shoreline_emu_physical_c14_density,shoreline_emu_physical_c15_density,shoreline_emu_physical_c16_density,shoreline_emu_physical_c17_density,shoreline_emu_physical_c18_density,shoreline_emu_physical_c19_density,shoreline_emu_physical_c20_density,shoreline_emu_physical_c21_density,shoreline_emu_physical_c22_density,shoreline_emu_physical_c23_density,evi_median,evi_sd),
-                PD_FEATURES=NULL,
-                SPECIES_CODE=sp,
-                IS_RESIDENT=is_resident(species = sp),
-                SRD_TYPE=NULL,
-                USE_SINGLE_SPECIES_STIXELS=NULL,
-                STIXEL_SUBDIR=NULL,
-                MEM_MULT_FIT_PREDICT=NULL
+                FOLD_N = NULL,
+                NUM_PD_FOLDS = NULL,
+                NUM_SHARDS_SUMMARIZE = NULL,
+                SRD_PRED_YEAR = NULL,
+                MIN_ERD_YEAR = NULL,
+                IS_CCI = NULL,
+                ENSEMBLE_SUPPORT = NULL,
+                SRD_PRED_DAYS = NULL,
+                SRD_WINDOW_WIDTH = NULL,
+                DATE_NAMES = NULL,
+                HABITAT_COVARS = habitat_covars,
+                OBS_COVARS = obs_covars,
+                WEATHER_COVARS = weather_covars,
+                PREDICTOR_LIST = predictor_list,
+                WEEKLY_SRD_COVARS = intersect(config$weekly_variables, predictor_list),
+                FACTOR_COVARS = factor_covars,
+                ALWAYS_SPLIT_COVARS = always_split,
+                PD_FEATURES = NULL,
+                SPECIES_CODE = sp,
+                IS_RESIDENT = is_resident(species = sp),
+                SRD_TYPE = NULL,
+                USE_SINGLE_SPECIES_STIXELS = NULL,
+                STIXEL_SUBDIR = NULL,
+                MEM_MULT_FIT_PREDICT = NULL
               )))
 
 }
